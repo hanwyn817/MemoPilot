@@ -7,11 +7,9 @@ MemoPilot 是一个面向个人和小团队的企业会议纪要生成工具。
 ## 启动
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+uv sync --extra dev
 cp .env.example .env
-streamlit run app.py
+uv run streamlit run app.py
 ```
 
 `.env` 示例：
@@ -30,4 +28,3 @@ MEMOPILOT_HISTORY_FILE=data/history_minutes.json
 3. 点击生成，系统会通过一次大模型请求生成正式会议纪要正文。
 
 历史纪要数据默认保存到 `data/history_minutes.json`，该文件已加入 `.gitignore`，避免把企业资料提交到 git。
-
