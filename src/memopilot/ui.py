@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import streamlit as st
 from pydantic import ValidationError
@@ -8,8 +9,16 @@ from pydantic import ValidationError
 from memopilot.config import load_settings
 from memopilot.generator import generate_minutes
 from memopilot.models import HistoricalMinute
+from memopilot.output import save_generated_minutes
 from memopilot.prompt import estimate_generation_input_tokens
-from memopilot.store import add_history, delete_history, load_history, save_history, update_history
+from memopilot.store import (
+    add_history,
+    add_many_history,
+    delete_history,
+    load_history,
+    save_history,
+    update_history,
+)
 from memopilot.token_estimate import estimate_tokens
 
 
@@ -24,6 +33,7 @@ def main() -> None:
         st.subheader("配置")
         st.write(f"模型：`{settings.model}`")
         st.write(f"历史库：`{settings.history_file}`")
+        st.write(f"输出目录：`{settings.output_dir}`")
         st.write("API：已配置" if settings.api_key else "API：未配置")
 
     history = load_history(settings.history_file)
@@ -55,6 +65,29 @@ def _history_tab(history_file, history: list[HistoricalMinute]) -> None:
 
         st.divider()
         st.subheader("导入/导出")
+        text_files = st.file_uploader(
+            "批量导入 TXT/MD",
+            type=["txt", "md"],
+            accept_multiple_files=True,
+        )
+        if text_files and st.button("导入 TXT/MD", use_container_width=True):
+            entries: list[tuple[str, str]] = []
+            failed: list[str] = []
+            for file in text_files:
+                try:
+                    body = file.read().decode("utf-8").strip()
+                except UnicodeDecodeError:
+                    failed.append(file.name)
+                    continue
+                topic = Path(file.name).stem
+                if body:
+                    entries.append((topic, body))
+            imported = add_many_history(history_file, entries)
+            if failed:
+                st.warning(f"以下文件不是 UTF-8 文本，已跳过：{', '.join(failed)}")
+            st.success(f"已导入 {len(imported)} 条 TXT/MD 历史纪要。")
+            st.rerun()
+
         exported = json.dumps([item.model_dump() for item in history], ensure_ascii=False, indent=2)
         st.download_button(
             "导出历史库 JSON",
@@ -126,8 +159,16 @@ def _generate_tab(settings, history: list[HistoricalMinute]) -> None:
                 transcript=transcript,
             )
         st.caption(f"预计输入：{estimated:,} tokens；历史样例：{len(history)} 条。")
-        if estimated > 900_000:
-            st.warning("预计输入接近 1M 上下文上限，建议减少历史样例或压缩正文。")
+        if estimated >= settings.token_hard_limit:
+            st.error(
+                f"预计输入超过硬限制 {settings.token_hard_limit:,} tokens，"
+                "请减少历史样例或压缩正文后再生成。"
+            )
+        elif estimated >= settings.token_warn_threshold:
+            st.warning(
+                f"预计输入超过提醒阈值 {settings.token_warn_threshold:,} tokens，"
+                "请求可能较慢且成本较高。"
+            )
 
         generate = st.button("生成会议纪要", type="primary", use_container_width=True)
 
@@ -138,6 +179,9 @@ def _generate_tab(settings, history: list[HistoricalMinute]) -> None:
             return
         if not settings.api_key:
             st.error("请先在 .env 中配置 OPENAI_API_KEY。")
+            return
+        if estimated >= settings.token_hard_limit:
+            st.error("本次请求已超过 token 硬限制，未发送给模型。")
             return
         try:
             with st.spinner("正在通过全上下文请求生成纪要..."):
@@ -150,11 +194,17 @@ def _generate_tab(settings, history: list[HistoricalMinute]) -> None:
             st.error(f"生成失败：{exc}")
             return
 
+        saved_path = save_generated_minutes(
+            settings.output_dir,
+            topic=current_topic,
+            minutes=result.minutes,
+        )
         st.text_area("会议纪要正文", value=result.minutes, height=520)
         st.caption(
             f"模型：{result.model}；历史样例：{result.history_count} 条；"
             f"预计输入：{result.estimated_input_tokens:,} tokens。"
         )
+        st.success(f"已自动保存到：{saved_path}")
         st.download_button(
             "下载 TXT",
             data=result.minutes,
@@ -162,4 +212,3 @@ def _generate_tab(settings, history: list[HistoricalMinute]) -> None:
             mime="text/plain",
             use_container_width=True,
         )
-

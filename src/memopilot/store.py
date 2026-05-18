@@ -32,6 +32,18 @@ def add_history(path: Path, topic: str, body: str) -> HistoricalMinute:
     return item
 
 
+def add_many_history(path: Path, entries: list[tuple[str, str]]) -> list[HistoricalMinute]:
+    items = load_history(path)
+    new_items = [
+        HistoricalMinute(topic=topic.strip(), body=body.strip())
+        for topic, body in entries
+        if topic.strip() and body.strip()
+    ]
+    items.extend(new_items)
+    save_history(path, items)
+    return new_items
+
+
 def update_history(path: Path, item_id: str, topic: str, body: str) -> None:
     items = load_history(path)
     for index, item in enumerate(items):
@@ -51,4 +63,3 @@ def update_history(path: Path, item_id: str, topic: str, body: str) -> None:
 def delete_history(path: Path, item_id: str) -> None:
     items = [item for item in load_history(path) if item.id != item_id]
     save_history(path, items)
-
