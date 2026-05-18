@@ -47,84 +47,99 @@ def main() -> None:
 
 
 def _history_tab(history_file, history: list[HistoricalMinute]) -> None:
-    left, right = st.columns([0.42, 0.58], gap="large")
+    history_tokens = estimate_tokens("".join(item.body for item in history))
+    history_chars = sum(len(item.topic) + len(item.body) for item in history)
+
+    metric_count, metric_tokens, metric_chars = st.columns(3)
+    metric_count.metric("历史样例", f"{len(history)} 条")
+    metric_tokens.metric("估算 tokens", f"{history_tokens:,}")
+    metric_chars.metric("总字符数", f"{history_chars:,}")
+
+    st.divider()
+    left, right = st.columns([0.4, 0.6], gap="large")
 
     with left:
-        st.subheader("录入历史纪要")
-        with st.form("add_history"):
-            topic = st.text_input("会议主题")
-            body = st.text_area("会议正文", height=360)
-            submitted = st.form_submit_button("保存到历史库", type="primary", use_container_width=True)
-        if submitted:
-            if not topic.strip() or not body.strip():
-                st.warning("会议主题和会议正文都不能为空。")
-            else:
-                add_history(history_file, topic, body)
-                st.success("已保存。")
+        st.subheader("添加样例")
+        add_tab, import_tab = st.tabs(["手动录入", "批量导入"])
+
+        with add_tab:
+            with st.form("add_history"):
+                topic = st.text_input("会议主题")
+                body = st.text_area("会议正文", height=340)
+                submitted = st.form_submit_button(
+                    "保存到历史库",
+                    type="primary",
+                    use_container_width=True,
+                )
+            if submitted:
+                if not topic.strip() or not body.strip():
+                    st.warning("会议主题和会议正文都不能为空。")
+                else:
+                    add_history(history_file, topic, body)
+                    st.success("已保存。")
+                    st.rerun()
+
+        with import_tab:
+            text_files = st.file_uploader(
+                "上传 TXT/MD 文件",
+                type=["txt", "md"],
+                accept_multiple_files=True,
+            )
+            st.caption("文件名会作为会议主题，文件内容会作为会议正文。")
+            if text_files and st.button("导入 TXT/MD", use_container_width=True):
+                entries: list[tuple[str, str]] = []
+                failed: list[str] = []
+                for file in text_files:
+                    try:
+                        body = file.read().decode("utf-8").strip()
+                    except UnicodeDecodeError:
+                        failed.append(file.name)
+                        continue
+                    topic = Path(file.name).stem
+                    if body:
+                        entries.append((topic, body))
+                imported = add_many_history(history_file, entries)
+                if failed:
+                    st.warning(f"以下文件不是 UTF-8 文本，已跳过：{', '.join(failed)}")
+                st.success(f"已导入 {len(imported)} 条 TXT/MD 历史纪要。")
                 st.rerun()
 
-        st.divider()
-        st.subheader("导入/导出")
-        text_files = st.file_uploader(
-            "批量导入 TXT/MD",
-            type=["txt", "md"],
-            accept_multiple_files=True,
-        )
-        if text_files and st.button("导入 TXT/MD", use_container_width=True):
-            entries: list[tuple[str, str]] = []
-            failed: list[str] = []
-            for file in text_files:
-                try:
-                    body = file.read().decode("utf-8").strip()
-                except UnicodeDecodeError:
-                    failed.append(file.name)
-                    continue
-                topic = Path(file.name).stem
-                if body:
-                    entries.append((topic, body))
-            imported = add_many_history(history_file, entries)
-            if failed:
-                st.warning(f"以下文件不是 UTF-8 文本，已跳过：{', '.join(failed)}")
-            st.success(f"已导入 {len(imported)} 条 TXT/MD 历史纪要。")
-            st.rerun()
-
-        exported = json.dumps([item.model_dump() for item in history], ensure_ascii=False, indent=2)
-        st.download_button(
-            "导出历史库 JSON",
-            data=exported,
-            file_name="history_minutes.json",
-            mime="application/json",
-            use_container_width=True,
-        )
-        uploaded = st.file_uploader("导入历史库 JSON", type=["json"])
-        replace = st.checkbox("导入时替换现有历史库", value=False)
-        if uploaded is not None and st.button("执行导入", use_container_width=True):
-            try:
-                raw = json.loads(uploaded.read().decode("utf-8"))
-                imported = [HistoricalMinute.model_validate(item) for item in raw]
-            except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, TypeError) as exc:
-                st.error(f"导入失败：{exc}")
-            else:
-                items = imported if replace else history + imported
-                save_history(history_file, items)
-                st.success(f"已导入 {len(imported)} 条。")
-                st.rerun()
+            with st.expander("JSON 备份与恢复"):
+                exported = json.dumps([item.model_dump() for item in history], ensure_ascii=False, indent=2)
+                st.download_button(
+                    "导出历史库 JSON",
+                    data=exported,
+                    file_name="history_minutes.json",
+                    mime="application/json",
+                    use_container_width=True,
+                )
+                uploaded = st.file_uploader("导入历史库 JSON", type=["json"])
+                replace = st.checkbox("导入时替换现有历史库", value=False)
+                if uploaded is not None and st.button("执行 JSON 导入", use_container_width=True):
+                    try:
+                        raw = json.loads(uploaded.read().decode("utf-8"))
+                        imported = [HistoricalMinute.model_validate(item) for item in raw]
+                    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, TypeError) as exc:
+                        st.error(f"导入失败：{exc}")
+                    else:
+                        items = imported if replace else history + imported
+                        save_history(history_file, items)
+                        st.success(f"已导入 {len(imported)} 条。")
+                        st.rerun()
 
     with right:
-        st.subheader("已录入历史纪要")
-        total_chars = sum(len(item.topic) + len(item.body) for item in history)
-        st.write(f"共 {len(history)} 条，约 {estimate_tokens(''.join(item.body for item in history)):,} tokens。")
+        st.subheader("管理历史库")
         if not history:
             st.info("尚未录入历史纪要。")
             return
 
-        query = st.text_input("搜索主题或正文")
+        query = st.text_input("搜索主题或正文", placeholder="输入关键词筛选历史样例")
         visible = [
             item
             for item in history
             if not query.strip() or query.strip() in item.topic or query.strip() in item.body
         ]
-        st.caption(f"当前显示 {len(visible)} 条；总字符数 {total_chars:,}。")
+        st.caption(f"当前显示 {len(visible)} / {len(history)} 条。")
 
         for item in visible:
             with st.expander(item.topic, expanded=False):
@@ -145,7 +160,7 @@ def _history_tab(history_file, history: list[HistoricalMinute]) -> None:
 
 
 def _generate_tab(settings, history: list[HistoricalMinute]) -> None:
-    left, right = st.columns([0.46, 0.54], gap="large")
+    left, right = st.columns([0.44, 0.56], gap="large")
     with left:
         st.subheader("本次会议")
         current_topic = st.text_input("本次会议主题")
@@ -158,17 +173,10 @@ def _generate_tab(settings, history: list[HistoricalMinute]) -> None:
                 current_topic=current_topic,
                 transcript=transcript,
             )
-        st.caption(f"预计输入：{estimated:,} tokens；历史样例：{len(history)} 条。")
-        if estimated >= settings.token_hard_limit:
-            st.error(
-                f"预计输入超过硬限制 {settings.token_hard_limit:,} tokens，"
-                "请减少历史样例或压缩正文后再生成。"
-            )
-        elif estimated >= settings.token_warn_threshold:
-            st.warning(
-                f"预计输入超过提醒阈值 {settings.token_warn_threshold:,} tokens，"
-                "请求可能较慢且成本较高。"
-            )
+        status_col, history_col = st.columns(2)
+        status_col.metric("预计输入", f"{estimated:,} tokens")
+        history_col.metric("历史样例", f"{len(history)} 条")
+        _show_token_status(estimated, settings.token_warn_threshold, settings.token_hard_limit)
 
         generate = st.button("生成会议纪要", type="primary", use_container_width=True)
 
@@ -212,3 +220,20 @@ def _generate_tab(settings, history: list[HistoricalMinute]) -> None:
             mime="text/plain",
             use_container_width=True,
         )
+
+
+def _show_token_status(estimated: int, warn_threshold: int, hard_limit: int) -> None:
+    if estimated <= 0:
+        st.info("输入会议主题和原始记录后会显示预计上下文规模。")
+    elif estimated >= hard_limit:
+        st.error(
+            f"预计输入超过硬限制 {hard_limit:,} tokens，"
+            "请减少历史样例或压缩正文后再生成。"
+        )
+    elif estimated >= warn_threshold:
+        st.warning(
+            f"预计输入超过提醒阈值 {warn_threshold:,} tokens，"
+            "请求可能较慢且成本较高。"
+        )
+    else:
+        st.success(f"预计输入低于硬限制 {hard_limit:,} tokens。")
