@@ -37,14 +37,17 @@ def build_user_prompt(
     current_topic: str,
     transcript: str,
 ) -> str:
-    history_block = "\n\n".join(_format_history_item(index, item) for index, item in enumerate(history, 1))
-    if not history_block:
-        history_block = "暂无历史会议纪要样例。"
+    return _build_user_prompt_from_blocks(
+        history_block=_build_history_block(history),
+        current_meeting_block=_build_current_meeting_block(current_topic, transcript),
+    )
 
-    return f"""请根据全部历史会议纪要样例，生成本次会议纪要正文。
+
+def _build_user_prompt_from_blocks(*, history_block: str, current_meeting_block: str) -> str:
+    return f"""请根据所选历史会议纪要样例，生成本次会议纪要正文。
 
 工作方式：
-1. 先在内部阅读全部历史样例，归纳它们的标题层级、段落组织、措辞习惯、事项展开方式、责任主体写法和详略程度。
+1. 先在内部阅读所选历史样例，归纳它们的标题层级、段落组织、措辞习惯、事项展开方式、责任主体写法和详略程度。
 2. 再阅读本次会议原始记录，提取应进入正式纪要的事实、数字、项目名称、责任事项和时间节点。
 3. 最终只输出本次会议纪要正文，不输出你的分析过程。
 
@@ -60,13 +63,7 @@ def build_user_prompt(
 {history_block}
 
 本次会议：
-<本次会议主题>
-{current_topic.strip()}
-</本次会议主题>
-
-<本次会议原始记录>
-{transcript.strip()}
-</本次会议原始记录>
+{current_meeting_block}
 
 请直接输出本次会议纪要正文。"""
 
@@ -85,13 +82,52 @@ def estimate_generation_input_tokens(
     return estimate_tokens("\n".join(message["content"] for message in messages))
 
 
+def estimate_generation_input_token_breakdown(
+    history: list[HistoricalMinute],
+    *,
+    current_topic: str,
+    transcript: str,
+) -> dict[str, int]:
+    history_block = _build_history_block(history)
+    current_meeting_block = _build_current_meeting_block(current_topic, transcript)
+    total = estimate_generation_input_tokens(history, current_topic=current_topic, transcript=transcript)
+    system_prompt = estimate_tokens(SYSTEM_PROMPT)
+    history_examples = estimate_tokens(history_block)
+    current_meeting = estimate_tokens(current_meeting_block)
+    instructions = max(0, total - system_prompt - history_examples - current_meeting)
+    return {
+        "total": total,
+        "system_prompt": system_prompt,
+        "instructions": instructions,
+        "history_examples": history_examples,
+        "current_meeting": current_meeting,
+    }
+
+
+def _build_history_block(history: list[HistoricalMinute]) -> str:
+    history_block = "\n\n".join(_format_history_item(index, item) for index, item in enumerate(history, 1))
+    return history_block or "暂无历史会议纪要样例。"
+
+
+def _build_current_meeting_block(current_topic: str, transcript: str) -> str:
+    return f"""<本次会议主题>
+{current_topic.strip()}
+</本次会议主题>
+
+<本次会议原始记录>
+{transcript.strip()}
+</本次会议原始记录>"""
+
+
 def _format_history_item(index: int, item: HistoricalMinute) -> str:
     return f"""<历史会议纪要样例 index="{index}" id="{item.id}">
 <会议主题>
 {item.topic.strip()}
 </会议主题>
+<标签>
+{", ".join(item.tags) if item.tags else "无"}
+</标签>
 <会议正文>
 {item.body.strip()}
 </会议正文>
 </历史会议纪要样例>"""
-

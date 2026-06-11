@@ -5,6 +5,7 @@ from memopilot.llm import LLMClient
 from memopilot.models import GenerationResult
 from memopilot.prompt import build_generation_messages, estimate_generation_input_tokens
 from memopilot.store import load_history
+from memopilot.tags import filter_history_by_tags, normalize_tags
 from memopilot.token_estimate import estimate_tokens
 
 
@@ -13,6 +14,7 @@ def generate_minutes(
     *,
     current_topic: str,
     transcript: str,
+    selected_tags: list[str] | None = None,
 ) -> GenerationResult:
     topic = current_topic.strip()
     raw_record = transcript.strip()
@@ -21,8 +23,10 @@ def generate_minutes(
     if not raw_record:
         raise ValueError("本次会议原始记录不能为空。")
 
-    history = load_history(settings.history_file)
+    history = filter_history_by_tags(load_history(settings.history_file), selected_tags)
     if not history:
+        if normalize_tags(selected_tags):
+            raise ValueError("所选标签下没有历史会议纪要样例。")
         raise ValueError("请先录入至少一条历史会议纪要样例。")
 
     messages = build_generation_messages(history, current_topic=topic, transcript=raw_record)
@@ -53,6 +57,7 @@ def generate_minutes_stream(
     *,
     current_topic: str,
     transcript: str,
+    selected_tags: list[str] | None = None,
 ):
     """Yield text chunks for streaming display."""
     topic = current_topic.strip()
@@ -62,10 +67,11 @@ def generate_minutes_stream(
     if not raw_record:
         raise ValueError("本次会议原始记录不能为空。")
 
-    history = load_history(settings.history_file)
+    history = filter_history_by_tags(load_history(settings.history_file), selected_tags)
     if not history:
+        if normalize_tags(selected_tags):
+            raise ValueError("所选标签下没有历史会议纪要样例。")
         raise ValueError("请先录入至少一条历史会议纪要样例。")
 
     messages = build_generation_messages(history, current_topic=topic, transcript=raw_record)
     yield from LLMClient(settings).generate_stream(messages)
-
