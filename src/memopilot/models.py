@@ -17,6 +17,8 @@ class HistoricalMinute(BaseModel):
 class GenerationResult(BaseModel):
     minutes: str
     estimated_input_tokens: int
+    actual_prompt_tokens: int
+    actual_completion_tokens: int
     history_count: int
     model: str
 

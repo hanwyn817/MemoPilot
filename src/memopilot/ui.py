@@ -7,7 +7,7 @@ import streamlit as st
 from pydantic import ValidationError
 
 from memopilot.config import load_settings
-from memopilot.generator import generate_minutes
+from memopilot.generator import generate_minutes, generate_minutes_stream
 from memopilot.models import HistoricalMinute
 from memopilot.output import save_generated_minutes
 from memopilot.prompt import estimate_generation_input_tokens
@@ -25,6 +25,20 @@ from memopilot.token_estimate import estimate_tokens
 def main() -> None:
     st.set_page_config(page_title="MemoPilot", page_icon="MP", layout="wide")
     settings = load_settings()
+
+    st.markdown(
+        """
+        <style>
+        .stApp > header {
+            height: 0rem;
+        }
+        .stApp {
+            padding-top: 0.5rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.title("MemoPilot")
     st.caption("基于纯文本历史纪要样例的全上下文会议纪要生成工具")
@@ -47,15 +61,6 @@ def main() -> None:
 
 
 def _history_tab(history_file, history: list[HistoricalMinute]) -> None:
-    history_tokens = estimate_tokens("".join(item.body for item in history))
-    history_chars = sum(len(item.topic) + len(item.body) for item in history)
-
-    metric_count, metric_tokens, metric_chars = st.columns(3)
-    metric_count.metric("历史样例", f"{len(history)} 条")
-    metric_tokens.metric("估算 tokens", f"{history_tokens:,}")
-    metric_chars.metric("总字符数", f"{history_chars:,}")
-
-    st.divider()
     left, right = st.columns([0.4, 0.6], gap="large")
 
     with left:
@@ -133,15 +138,89 @@ def _history_tab(history_file, history: list[HistoricalMinute]) -> None:
             st.info("尚未录入历史纪要。")
             return
 
-        query = st.text_input("搜索主题或正文", placeholder="输入关键词筛选历史样例")
+        search_col, sort_col = st.columns([0.6, 0.4])
+        with search_col:
+            query = st.text_input("搜索主题或正文", placeholder="输入关键词筛选历史样例")
+        with sort_col:
+            sort_option = st.selectbox(
+                "排序方式",
+                options=[
+                    "添加日期（最新在前）",
+                    "添加日期（最早在前）",
+                    "名称（A-Z）",
+                    "名称（Z-A）",
+                ],
+                index=0,
+            )
+
         visible = [
             item
             for item in history
             if not query.strip() or query.strip() in item.topic or query.strip() in item.body
         ]
+
+        if sort_option == "添加日期（最新在前）":
+            visible.sort(key=lambda x: x.created_at, reverse=True)
+        elif sort_option == "添加日期（最早在前）":
+            visible.sort(key=lambda x: x.created_at)
+        elif sort_option == "名称（A-Z）":
+            visible.sort(key=lambda x: x.topic.lower())
+        elif sort_option == "名称（Z-A）":
+            visible.sort(key=lambda x: x.topic.lower(), reverse=True)
+
         st.caption(f"当前显示 {len(visible)} / {len(history)} 条。")
 
-        for item in visible:
+        # 分页控制（紧凑布局）
+        page_size_options = {"5": 5, "10": 10, "20": 20, "50": 50}
+        page_size = page_size_options.get(st.session_state.get("page_size", "10"), 10)
+        total_pages = max(1, (len(visible) + page_size - 1) // page_size)
+        page_num = st.session_state.get("page_num", 1)
+        if page_num > total_pages:
+            page_num = total_pages
+            st.session_state.page_num = page_num
+
+        start_idx = (page_num - 1) * page_size
+        end_idx = min(start_idx + page_size, len(visible))
+        page_items = visible[start_idx:end_idx]
+
+        # 分页控件行
+        prev_disabled = page_num <= 1
+        next_disabled = page_num >= total_pages
+
+        cols = st.columns([1, 1, 2, 1, 1])
+        with cols[0]:
+            if st.button("◀ 上一页", disabled=prev_disabled, use_container_width=True, key="btn_prev"):
+                st.session_state.page_num = page_num - 1
+                st.rerun()
+        with cols[1]:
+            if st.button("下一页 ▶", disabled=next_disabled, use_container_width=True, key="btn_next"):
+                st.session_state.page_num = page_num + 1
+                st.rerun()
+        with cols[2]:
+            st.markdown(
+                f"<div style='text-align:center; padding-top:0.5rem; color:#888; font-size:0.9rem;'>"
+                f"第 <b>{page_num}</b> / {total_pages} 页"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+        with cols[3]:
+            selected = st.selectbox(
+                "每页",
+                options=list(page_size_options.keys()),
+                index=1,
+                key="page_size",
+                label_visibility="collapsed",
+            )
+            page_size = page_size_options[selected]
+        with cols[4]:
+            st.markdown(
+                f"<div style='text-align:right; padding-top:0.5rem; color:#888; font-size:0.9rem;'>"
+                f"{start_idx + 1}-{end_idx} 条"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+        for item in page_items:
             with st.expander(item.topic, expanded=False):
                 with st.form(f"edit_{item.id}"):
                     edited_topic = st.text_input("会议主题", value=item.topic, key=f"topic_{item.id}")
@@ -181,7 +260,7 @@ def _generate_tab(settings, history: list[HistoricalMinute]) -> None:
         generate = st.button("生成会议纪要", type="primary", use_container_width=True)
 
     with right:
-        st.subheader("生成结果")
+        st.markdown("<h3 id='generate-result'>生成结果</h3>", unsafe_allow_html=True)
         if not generate:
             st.info("录入历史纪要后，输入本次会议主题和原始记录即可生成。")
             return
@@ -191,31 +270,45 @@ def _generate_tab(settings, history: list[HistoricalMinute]) -> None:
         if estimated >= settings.token_hard_limit:
             st.error("本次请求已超过 token 硬限制，未发送给模型。")
             return
+        st.html(
+            "<script>"
+            "const el = document.getElementById('generate-result');"
+            "if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'});"
+            "</script>"
+        )
         try:
-            with st.spinner("正在通过全上下文请求生成纪要..."):
-                result = generate_minutes(
-                    settings,
-                    current_topic=current_topic,
-                    transcript=transcript,
+            stream_container = st.container()
+            with stream_container:
+                placeholder = st.empty()
+                placeholder.info("正在生成会议纪要，请稍候...")
+                result_text = placeholder.write_stream(
+                    generate_minutes_stream(
+                        settings,
+                        current_topic=current_topic,
+                        transcript=transcript,
+                    )
                 )
         except Exception as exc:
             st.error(f"生成失败：{exc}")
             return
 
+        result_text = result_text.strip()
+        completion_tokens = estimate_tokens(result_text)
+
         saved_path = save_generated_minutes(
             settings.output_dir,
             topic=current_topic,
-            minutes=result.minutes,
+            minutes=result_text,
         )
-        st.text_area("会议纪要正文", value=result.minutes, height=520)
         st.caption(
-            f"模型：{result.model}；历史样例：{result.history_count} 条；"
-            f"预计输入：{result.estimated_input_tokens:,} tokens。"
+            f"模型：{settings.model}；历史样例：{len(history)} 条；"
+            f"预计输入：{estimated:,} tokens；"
+            f"实际消耗：输入 {estimated:,} / 输出 {completion_tokens:,} tokens。"
         )
         st.success(f"已自动保存到：{saved_path}")
         st.download_button(
             "下载 TXT",
-            data=result.minutes,
+            data=result_text,
             file_name="meeting_minutes.txt",
             mime="text/plain",
             use_container_width=True,
