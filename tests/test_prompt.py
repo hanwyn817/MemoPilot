@@ -54,3 +54,11 @@ def test_filter_history_by_tags_uses_tag_union() -> None:
 
     assert [item.topic for item in selected] == ["A专题会", "B专题会"]
     assert filter_history_by_tags(history, []) == history
+
+
+def test_prompt_does_not_include_history_tags() -> None:
+    history = [HistoricalMinute(topic="制剂专题会", body="一、制剂事项", tags=["仅用于筛选的标签"])]
+
+    prompt = build_user_prompt(history, current_topic="本次会", transcript="原始记录")
+
+    assert "仅用于筛选的标签" not in prompt

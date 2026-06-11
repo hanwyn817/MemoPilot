@@ -124,9 +124,6 @@ def _format_history_item(index: int, item: HistoricalMinute) -> str:
 <会议主题>
 {item.topic.strip()}
 </会议主题>
-<标签>
-{", ".join(item.tags) if item.tags else "无"}
-</标签>
 <会议正文>
 {item.body.strip()}
 </会议正文>
