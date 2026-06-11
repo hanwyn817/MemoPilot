@@ -29,3 +29,29 @@ class GenerationResult(BaseModel):
     actual_completion_tokens: int
     history_count: int
     model: str
+
+
+class TokenBreakdown(BaseModel):
+    total: int
+    system_prompt: int
+    instructions: int
+    history_examples: int
+    current_meeting: int
+
+
+class UsedHistoryExample(BaseModel):
+    id: str
+    topic: str
+    tags: list[str] = Field(default_factory=list)
+
+
+class GenerationMetadata(BaseModel):
+    saved_at: str | None = None
+    model: str
+    topic: str
+    selected_tags: list[str] = Field(default_factory=list)
+    history_count: int
+    history_examples: list[UsedHistoryExample] = Field(default_factory=list)
+    estimated_input_tokens: int
+    token_breakdown: TokenBreakdown
+    completion_tokens: int

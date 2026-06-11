@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from memopilot.models import GenerationMetadata
 from memopilot.output import save_generated_minutes
 from memopilot.store import (
     add_history,
@@ -88,7 +89,22 @@ def test_save_generated_minutes_writes_metadata(tmp_path: Path) -> None:
         tmp_path,
         topic="测试会",
         minutes="一、主要内容",
-        metadata={"model": "test-model", "selected_tags": ["制剂"]},
+        metadata=GenerationMetadata(
+            model="test-model",
+            topic="测试会",
+            selected_tags=["制剂"],
+            history_count=1,
+            history_examples=[{"id": "history-1", "topic": "历史会", "tags": ["制剂"]}],
+            estimated_input_tokens=100,
+            token_breakdown={
+                "total": 100,
+                "system_prompt": 10,
+                "instructions": 20,
+                "history_examples": 30,
+                "current_meeting": 40,
+            },
+            completion_tokens=50,
+        ),
     )
     metadata_path = path.with_suffix(".metadata.json")
 
@@ -96,3 +112,4 @@ def test_save_generated_minutes_writes_metadata(tmp_path: Path) -> None:
     metadata_text = metadata_path.read_text(encoding="utf-8")
     assert '"model": "test-model"' in metadata_text
     assert '"selected_tags": [' in metadata_text
+    assert '"history-1"' in metadata_text
