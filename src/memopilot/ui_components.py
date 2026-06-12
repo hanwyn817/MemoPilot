@@ -38,7 +38,7 @@ def show_selected_history_preview(selected_history: list[HistoricalMinute]) -> N
                 for item in preview_items
             ],
             hide_index=True,
-            use_container_width=True,
+            width='stretch',
         )
         if len(selected_history) > len(preview_items):
             st.caption(f"仅预览前 {len(preview_items)} 条；实际将使用 {len(selected_history)} 条。")

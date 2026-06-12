@@ -55,7 +55,7 @@ def generate_tab(settings: Settings, history: list[HistoricalMinute]) -> None:
         show_token_breakdown(token_breakdown)
         show_token_status(estimated, settings.token_warn_threshold, settings.token_hard_limit)
 
-        generate = st.button("生成会议纪要", type="primary", use_container_width=True)
+        generate = st.button("生成会议纪要", type="primary", width='stretch')
 
     with right:
         st.markdown("<h3 id='generate-result'>生成结果</h3>", unsafe_allow_html=True)
@@ -125,5 +125,5 @@ def generate_tab(settings: Settings, history: list[HistoricalMinute]) -> None:
             data=result_text,
             file_name="meeting_minutes.txt",
             mime="text/plain",
-            use_container_width=True,
+            width='stretch',
         )

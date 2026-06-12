@@ -37,7 +37,7 @@ def history_tab(history_file, history: list[HistoricalMinute]) -> None:
                 submitted = st.form_submit_button(
                     "保存到历史库",
                     type="primary",
-                    use_container_width=True,
+                    width='stretch',
                 )
             if submitted:
                 if not topic.strip() or not body.strip():
@@ -55,7 +55,7 @@ def history_tab(history_file, history: list[HistoricalMinute]) -> None:
             )
             st.caption("文件名会作为会议主题，文件内容会作为会议正文。")
             import_tags = tag_editor("导入标签", [], available_tags, "import_history")
-            if text_files and st.button("导入 TXT/MD", use_container_width=True):
+            if text_files and st.button("导入 TXT/MD", width='stretch'):
                 entries: list[tuple[str, str]] = []
                 failed: list[str] = []
                 for file in text_files:
@@ -80,11 +80,11 @@ def history_tab(history_file, history: list[HistoricalMinute]) -> None:
                     data=exported,
                     file_name="history_minutes.json",
                     mime="application/json",
-                    use_container_width=True,
+                    width='stretch',
                 )
                 uploaded = st.file_uploader("导入历史库 JSON", type=["json"])
                 replace = st.checkbox("导入时替换现有历史库", value=False)
-                if uploaded is not None and st.button("执行 JSON 导入", use_container_width=True):
+                if uploaded is not None and st.button("执行 JSON 导入", width='stretch'):
                     try:
                         raw = json.loads(uploaded.read().decode("utf-8"))
                         imported = [HistoricalMinute.model_validate(item) for item in raw]
@@ -130,7 +130,7 @@ def history_tab(history_file, history: list[HistoricalMinute]) -> None:
             st.caption(f"将标签追加到当前筛选结果中的 {len(visible)} 条样例。")
             with st.form("bulk_add_tags"):
                 bulk_tags = tag_editor("要追加的标签", [], available_tags, "bulk_add_tags")
-                bulk_submitted = st.form_submit_button("追加标签", use_container_width=True)
+                bulk_submitted = st.form_submit_button("追加标签", width='stretch')
             if bulk_submitted:
                 updated = add_tags_to_history(history_file, [item.id for item in visible], bulk_tags)
                 if updated:
@@ -148,8 +148,8 @@ def history_tab(history_file, history: list[HistoricalMinute]) -> None:
                     edited_tags = tag_editor("标签", item.tags, available_tags, f"edit_{item.id}")
                     edited_body = st.text_area("会议正文", value=item.body, height=260, key=f"body_{item.id}")
                     col_save, col_delete = st.columns(2)
-                    save_clicked = col_save.form_submit_button("保存修改", use_container_width=True)
-                    delete_clicked = col_delete.form_submit_button("删除", use_container_width=True)
+                    save_clicked = col_save.form_submit_button("保存修改", width='stretch')
+                    delete_clicked = col_delete.form_submit_button("删除", width='stretch')
                 if save_clicked:
                     update_history(history_file, item.id, edited_topic, edited_body, tags=edited_tags)
                     st.success("已更新。")
@@ -170,7 +170,7 @@ def _tag_management_panel(history_file, history: list[HistoricalMinute], availab
         st.dataframe(
             [{"标签": tag, "样例数": counts[tag]} for tag in available_tags],
             hide_index=True,
-            use_container_width=True,
+            width='stretch',
         )
 
         rename_col, merge_col, delete_col = st.columns(3)
@@ -178,7 +178,7 @@ def _tag_management_panel(history_file, history: list[HistoricalMinute], availab
             with st.form("rename_tag"):
                 old_tag = st.selectbox("原标签", options=available_tags, key="rename_tag_old")
                 new_tag = st.text_input("新标签", key="rename_tag_new")
-                rename_submitted = st.form_submit_button("重命名", use_container_width=True)
+                rename_submitted = st.form_submit_button("重命名", width='stretch')
             if rename_submitted:
                 updated = rename_history_tag(history_file, old_tag, new_tag)
                 _show_tag_operation_result(updated)
@@ -187,7 +187,7 @@ def _tag_management_panel(history_file, history: list[HistoricalMinute], availab
             with st.form("merge_tags"):
                 source_tags = st.multiselect("要合并的标签", options=available_tags, key="merge_tag_sources")
                 target_tag = st.text_input("合并到标签", key="merge_tag_target")
-                merge_submitted = st.form_submit_button("合并", use_container_width=True)
+                merge_submitted = st.form_submit_button("合并", width='stretch')
             if merge_submitted:
                 updated = merge_history_tags(history_file, source_tags, target_tag)
                 _show_tag_operation_result(updated)
@@ -196,7 +196,7 @@ def _tag_management_panel(history_file, history: list[HistoricalMinute], availab
             with st.form("delete_tag"):
                 tag_to_delete = st.selectbox("要删除的标签", options=available_tags, key="delete_tag_value")
                 confirmed = st.checkbox("确认删除该标签", key="delete_tag_confirmed")
-                delete_submitted = st.form_submit_button("删除标签", use_container_width=True)
+                delete_submitted = st.form_submit_button("删除标签", width='stretch')
             if delete_submitted:
                 if not confirmed:
                     st.warning("请先勾选确认删除。")
@@ -254,11 +254,11 @@ def _show_pagination(visible: list[HistoricalMinute]) -> list[HistoricalMinute]:
 
     cols = st.columns([1, 1, 2, 1, 1])
     with cols[0]:
-        if st.button("◀ 上一页", disabled=prev_disabled, use_container_width=True, key="btn_prev"):
+        if st.button("◀ 上一页", disabled=prev_disabled, width='stretch', key="btn_prev"):
             st.session_state.page_num = page_num - 1
             st.rerun()
     with cols[1]:
-        if st.button("下一页 ▶", disabled=next_disabled, use_container_width=True, key="btn_next"):
+        if st.button("下一页 ▶", disabled=next_disabled, width='stretch', key="btn_next"):
             st.session_state.page_num = page_num + 1
             st.rerun()
     with cols[2]:
