@@ -21,6 +21,22 @@ def main() -> None:
         .stApp {
             padding-top: 0.5rem;
         }
+        ol {
+            list-style: none;
+            counter-reset: item;
+            padding-left: 2rem;
+        }
+        ol li {
+            counter-increment: item;
+            position: relative;
+        }
+        ol li::before {
+            content: counter(item) ". ";
+            position: absolute;
+            left: -1.5rem;
+            user-select: text;
+            -webkit-user-select: text;
+        }
         </style>
         """,
         unsafe_allow_html=True,
